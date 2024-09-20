@@ -1,29 +1,53 @@
 import requests
 import json
 import os
+import time
 from datetime import datetime, timezone, timedelta
+from itertools import combinations
 
 bookmakers = ['betmgm','draftkings','fanduel', 'williamhill_us','espnbet','fliff']
 api_key = os.getenv('THE_ODDS_API_KEY')
 events_data = {}
 
 def fetch_odds(sport_key):
+    api_key = os.getenv('THE_ODDS_API_KEY')
     if not api_key:
         return "API key not found. Please set the environment variable 'THE_ODDS_API_KEY'."
 
     url = f'https://api.the-odds-api.com/v4/sports/{sport_key}/odds'
     params = {
         "apiKey": api_key,
-        "bookmakers": ','.join(bookmakers),
+        "bookmakers": ','.join(my_bookmakers + sharp_bookmakers),
         "markets": "h2h,spreads,totals",
         "oddsFormat": "american"
     }
     response = requests.get(url, params=params)
+    quota_used = int(response.headers._store.get('x-requests-last')[1])
+    
+    time.sleep(1)
+    
+    # Ensure the response is valid JSON
     if response.status_code == 200:
-        games = response.json()
-        return games 
+        try:
+            games = response.json()
+        except ValueError:
+            raise Exception("Invalid JSON response")
     else:
         raise Exception(f"Failed to retrieve data: {response.status_code} - {response.text}")
+    
+    # Filter out games that have already commenced
+    current_time = datetime.now(timezone.utc)
+    filtered_games = [
+        game for game in games if datetime.strptime(game['commence_time'], "%Y-%m-%dT%H:%M:%S%z") > current_time
+    ]
+
+    # Save current data
+    with open('data/curr_data.json', 'w') as f: 
+       json.dump(games, f)
+       
+    return filtered_games, quota_used
+
+    
 def fetch_sports():
     if not api_key:
         return "API key not found. Please set the environment variable 'THE_ODDS_API_KEY'."    
@@ -69,11 +93,14 @@ def find_arbitrage_opportunities(data):
                             })
 
             # Check for arbitrage opportunities
-            for outcome1, outcome2 in zip(market_outcomes.values(), market_outcomes.values()):
-                if len(outcome1) > 1 and len(outcome2) > 1 and outcome1 != outcome2:
+            for outcome_name1, outcome_name2 in combinations(market_outcomes.keys(), 2):
+                outcome1 = market_outcomes[outcome_name1]
+                outcome2 = market_outcomes[outcome_name2]
+
+                if len(outcome1) > 1 and len(outcome2) > 1:
                     best_odds_outcome1 = min(outcome1, key=lambda x: x['implied_prob'])
                     best_odds_outcome2 = min(outcome2, key=lambda x: x['implied_prob'])
-
+        
                     total_implied_prob = best_odds_outcome1['implied_prob'] + best_odds_outcome2['implied_prob']
                     if total_implied_prob < 1:
                         arbitrage_opportunity = {

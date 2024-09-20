@@ -153,6 +153,13 @@ def process_games(games):
     quota_sum = 0 
     processed_games = []
     for game in games:
+        print(type(game), game)
+        # Check if 'commence_time' is present and if 'game' is a dictionary
+        if not isinstance(game, dict) or 'commence_time' not in game:
+            print(f"Invalid game data: {game}")
+            
+            continue
+        
         commence_time = datetime.fromisoformat(game['commence_time'][:-1]).replace(tzinfo=timezone.utc)
         now = datetime.now(timezone.utc)   
         if commence_time > now: 

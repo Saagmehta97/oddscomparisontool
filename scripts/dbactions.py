@@ -12,18 +12,24 @@ def to_est(dt_str):
 def store_odds(data):
     conn = sqlite3.connect('odds.db')
     c = conn.cursor()
+    
     for game in data:
         commence_dttm = to_est(game['commence_time'])
+        home_team = game['home_team']
+        away_team = game['away_team']
+        
+        # Assume odds for home and away teams are in 'bookmakers' -> 'outcomes' in the game data
         for bookmaker in game['bookmakers']:
             if bookmaker['key'] == 'pinnacle':
                 for market in bookmaker['markets']:
-                    for outcome in market['outcomes']:
-                        last_updated_dttm = to_est(market['last_update'])  # Convert last_update to EST/EDT
-                        point = outcome.get('point')
-                        c.execute('INSERT OR REPLACE INTO pinnacle_lines VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', 
-                                  (game['id'],f"{game['away_team']} @ {game['home_team']}" ,game['sport_key'], 
-                                   market['key'], outcome['name'], point, outcome['price'],commence_dttm,last_updated_dttm))
-                    
+                    if market['key'] == 'h2h':  # Assuming 'h2h' contains the home and away team odds
+                        odds_home = market['outcomes'][0]['price']  # First outcome is home team
+                        odds_away = market['outcomes'][1]['price']  # Second outcome is away team
+                        
+                        # Insert the relevant data into the table
+                        c.execute('INSERT OR REPLACE INTO pinnacle_lines (event_time, home_team, away_team, odds_home_team, odds_away_team) VALUES (?, ?, ?, ?, ?)', 
+                                  (commence_dttm, home_team, away_team, odds_home, odds_away))
+    
     conn.commit()
     conn.close()
 
@@ -41,8 +47,6 @@ def remove_commenced_games():
     conn.commit()
     conn.close()
 
-
 def process_db(data):
     remove_commenced_games()
     store_odds(data)
-    
